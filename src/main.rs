@@ -1,45 +1,37 @@
-use std::convert::Infallible;
-use serde::{Serialize, Deserialize};
-use warp::{Filter, hyper::StatusCode};
+#[macro_use]
+extern crate rocket;
 
-// static TEMPLATE: &str = include!("static/index.html");
+use lazy_static::lazy_static;
+use tera::{Context, Tera};
 
-#[derive(Deserialize, Serialize)]
-struct Request {
-    name: Option<String>,
-    pass: Option<String>,
+lazy_static! {
+    pub static ref TEMPLATES: Tera = {
+        let tera = match Tera::new("template/*") {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                std::process::exit(1);
+            }
+        };
+        tera
+    };
 }
 
-#[tokio::main]
-async fn main() {
-    // println!("{}", TEMPLATE);
-    std::env::set_var("RUST_LOG", "server=info");
-    env_logger::init();
+#[get("/?<name>&<pass>")]
+fn index(name: Option<&str>, pass: Option<&str>) -> String {
+    let mut ctx = Context::new();
+    ctx.insert("name", name.unwrap_or("no name"));
+    ctx.insert("pass", pass.unwrap_or("no pass"));
 
-    let route = warp::get()
-        .and(warp::query())
-        .and_then(handler)
-        .with(warp::log("server"));
-
-    warp::serve(route).run(([0, 0, 0, 0], 8000)).await;
+    TEMPLATES.render("index.html", &ctx).unwrap()
 }
 
-async fn handler(input: Request) -> Result<impl warp::Reply, Infallible> {
-    let template = "<html>
-<body>
-<h1>
-    Hello, {name}
-</h1>
-<p>
-    your pass is {pass}
-</p>
-</body>
-</html>";
+#[rocket::main]
+async fn main() -> Result<(), rocket::Error> {
+    let _rocket = rocket::build()
+        .mount("/", routes![index])
+        .launch()
+        .await?;
 
-    let mut renderer = tinytemplate::TinyTemplate::new();
-    renderer.add_template("foobar", template).unwrap();
-
-    let res = renderer.render("foobar", &input).unwrap();
-    let resp = warp::reply::html(res);
-    Ok(warp::reply::with_status(resp, StatusCode::OK))
+    Ok(())
 }
